@@ -109,6 +109,7 @@ import org.apache.hadoop.hbase.ipc.Invocation;
 import org.apache.hadoop.hbase.ipc.RpcServer;
 import org.apache.hadoop.hbase.ipc.ServerNotRunningYetException;
 import org.apache.hadoop.hbase.regionserver.Leases.LeaseStillHeldException;
+import org.apache.hadoop.hbase.regionserver.compactions.CompactionProgress;
 import org.apache.hadoop.hbase.regionserver.handler.CloseMetaHandler;
 import org.apache.hadoop.hbase.regionserver.handler.CloseRegionHandler;
 import org.apache.hadoop.hbase.regionserver.handler.CloseRootHandler;
@@ -628,9 +629,9 @@ public class HRegionServer implements HRegionInterface, HBaseRPCErrorHandler,
             closeUserRegions(this.abortRequested);
           } else if (this.stopping) {
             LOG.info("Stopping meta regions, if the HRegionServer hosts any");
-            
+
             boolean allUserRegionsOffline = areAllUserRegionsOffline();
-            
+
             if (allUserRegionsOffline) {
               // Set stopped if no requests since last time we went around the loop.
               // The remaining meta regions will be closed on our way out.
@@ -920,6 +921,8 @@ public class HRegionServer implements HRegionInterface, HBaseRPCErrorHandler,
     int storefileSizeMB = 0;
     int memstoreSizeMB = (int) (r.memstoreSize.get() / 1024 / 1024);
     int storefileIndexSizeMB = 0;
+    int totalCompactingKVs = 0;
+    int currentCompactedKVs = 0;
     synchronized (r.stores) {
       stores += r.stores.size();
       for (Store store : r.stores.values()) {
@@ -928,12 +931,18 @@ public class HRegionServer implements HRegionInterface, HBaseRPCErrorHandler,
             / 1024 / 1024);
         storefileSizeMB += (int) (store.getStorefilesSize() / 1024 / 1024);
         storefileIndexSizeMB += (int) (store.getStorefilesIndexSize() / 1024 / 1024);
+        CompactionProgress progress = store.getCompactionProgress();
+        if( progress != null ) {
+          totalCompactingKVs += progress.totalCompactingKVs;
+          currentCompactedKVs += progress.currentCompactedKVs;
+        }
       }
     }
     return new HServerLoad.RegionLoad(name,stores, storefiles,
         storeUncompressedSizeMB,
         storefileSizeMB, memstoreSizeMB, storefileIndexSizeMB,
-        (int) r.readRequestsCount.get(), (int) r.writeRequestsCount.get());
+        (int) r.readRequestsCount.get(), (int) r.writeRequestsCount.get(),
+        totalCompactingKVs, currentCompactedKVs);
   }
 
   /**
@@ -1057,13 +1066,13 @@ public class HRegionServer implements HRegionInterface, HBaseRPCErrorHandler,
       super("CompactionChecker", sleepTime, h);
       this.instance = h;
       LOG.info("Runs every " + StringUtils.formatTime(sleepTime));
-      
+
       /* MajorCompactPriority is configurable.
        * If not set, the compaction will use default priority.
        */
       this.majorCompactPriority = this.instance.conf.
         getInt("hbase.regionserver.compactionChecker.majorCompactPriority",
-        DEFAULT_PRIORITY);      
+        DEFAULT_PRIORITY);
     }
 
     @Override
@@ -1078,14 +1087,14 @@ public class HRegionServer implements HRegionInterface, HBaseRPCErrorHandler,
               this.instance.compactSplitThread.requestCompaction(r, s,
                 getName() + " requests compaction");
             } else if (s.isMajorCompaction()) {
-              if (majorCompactPriority == DEFAULT_PRIORITY || 
+              if (majorCompactPriority == DEFAULT_PRIORITY ||
                   majorCompactPriority > r.getCompactPriority()) {
                 this.instance.compactSplitThread.requestCompaction(r, s,
                     getName() + " requests major compaction; use default priority");
               } else {
                this.instance.compactSplitThread.requestCompaction(r, s,
                   getName() + " requests major compaction; use configured priority",
-                  this.majorCompactPriority); 
+                  this.majorCompactPriority);
               }
             }
           } catch (IOException e) {
@@ -1321,7 +1330,7 @@ public class HRegionServer implements HRegionInterface, HBaseRPCErrorHandler,
     while (true) {
       try {
         this.infoServer = new InfoServer("regionserver", addr, port, false, this.conf);
-        this.infoServer.addServlet("status", "/rs-status", RSStatusServlet.class); 
+        this.infoServer.addServlet("status", "/rs-status", RSStatusServlet.class);
         this.infoServer.setAttribute(REGIONSERVER, this);
         this.infoServer.start();
         break;
@@ -1812,7 +1821,7 @@ public class HRegionServer implements HRegionInterface, HBaseRPCErrorHandler,
           + "regionName is null");
     }
     HRegion region = getRegion(regionName);
-    Integer lock = getLockFromId(put.getLockId());    
+    Integer lock = getLockFromId(put.getLockId());
     if (region.getCoprocessorHost() != null) {
       Boolean result = region.getCoprocessorHost()
         .preCheckAndPut(row, family, qualifier, compareOp, comparator, put);
@@ -1851,7 +1860,7 @@ public class HRegionServer implements HRegionInterface, HBaseRPCErrorHandler,
           + "regionName is null");
     }
     HRegion region = getRegion(regionName);
-    Integer lock = getLockFromId(delete.getLockId());        
+    Integer lock = getLockFromId(delete.getLockId());
     WritableByteArrayComparable comparator = new BinaryComparator(value);
     if (region.getCoprocessorHost() != null) {
       Boolean result = region.getCoprocessorHost().preCheckAndDelete(row,
@@ -1892,7 +1901,7 @@ public class HRegionServer implements HRegionInterface, HBaseRPCErrorHandler,
         + "regionName is null");
     }
     HRegion region = getRegion(regionName);
-    Integer lock = getLockFromId(delete.getLockId());        
+    Integer lock = getLockFromId(delete.getLockId());
     if (region.getCoprocessorHost() != null) {
       Boolean result = region.getCoprocessorHost().preCheckAndDelete(row,
         family, qualifier, compareOp, comparator, delete);

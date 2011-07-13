@@ -24,10 +24,8 @@ import java.io.InterruptedIOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
 import java.util.NavigableSet;
-import java.util.Set;
 import java.util.SortedSet;
 import java.util.concurrent.CopyOnWriteArraySet;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -39,27 +37,29 @@ import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.FileUtil;
 import org.apache.hadoop.fs.Path;
-import org.apache.hadoop.hbase.*;
+import org.apache.hadoop.hbase.HColumnDescriptor;
+import org.apache.hadoop.hbase.HConstants;
+import org.apache.hadoop.hbase.HRegionInfo;
+import org.apache.hadoop.hbase.HTableDescriptor;
+import org.apache.hadoop.hbase.KeyValue;
+import org.apache.hadoop.hbase.RemoteExceptionHandler;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.io.HeapSize;
-import org.apache.hadoop.hbase.io.hfile.BlockCache;
 import org.apache.hadoop.hbase.io.hfile.Compression;
 import org.apache.hadoop.hbase.io.hfile.HFile;
 import org.apache.hadoop.hbase.io.hfile.HFileScanner;
-import org.apache.hadoop.hbase.regionserver.compactions.CompactionRequest;
 import org.apache.hadoop.hbase.monitoring.MonitoredTask;
+import org.apache.hadoop.hbase.regionserver.compactions.CompactionProgress;
+import org.apache.hadoop.hbase.regionserver.compactions.CompactionRequest;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.apache.hadoop.hbase.util.ClassSize;
 import org.apache.hadoop.hbase.util.EnvironmentEdgeManager;
 import org.apache.hadoop.util.StringUtils;
 
 import com.google.common.base.Preconditions;
-import com.google.common.base.Predicate;
-import com.google.common.collect.Collections2;
 import com.google.common.collect.ImmutableList;
 import com.google.common.collect.Iterables;
 import com.google.common.collect.Lists;
-import com.google.common.collect.Sets;
 
 /**
  * A Store holds a column family in a Region.  Its a memstore and a set of zero
@@ -115,6 +115,7 @@ public class Store implements HeapSize {
   final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
   private final String storeNameStr;
   private final boolean inMemory;
+  private CompactionProgress progress;
 
   /*
    * List of store files inside this store. This is an immutable list that
@@ -755,13 +756,20 @@ public class Store implements HeapSize {
    * @param dir
    * @throws IOException
    */
-  public static long getLowestTimestamp(final List<StoreFile> candidates) 
+  public static long getLowestTimestamp(final List<StoreFile> candidates)
       throws IOException {
     long minTs = Long.MAX_VALUE;
     for (StoreFile storeFile : candidates) {
       minTs = Math.min(minTs, storeFile.getModificationTimeStamp());
     }
     return minTs;
+  }
+
+  /** getter for ComppactionProgress object
+   * @return CompactionProgress object
+   */
+  public CompactionProgress getCompactionProgress() {
+    return this.progress;
   }
 
   /*
@@ -819,7 +827,7 @@ public class Store implements HeapSize {
           }
         } else if (this.ttl != HConstants.FOREVER && oldest > this.ttl) {
           LOG.debug("Major compaction triggered on store " + this.storeNameStr +
-            ", because keyvalues outdated; time since last major compaction " + 
+            ", because keyvalues outdated; time since last major compaction " +
             (now - lowTimestamp) + "ms");
           result = true;
         }
@@ -1079,6 +1087,9 @@ public class Store implements HeapSize {
       }
     }
 
+    // keep track of compaction progress
+    progress = new CompactionProgress(maxKeyCount);
+
     // For each file, obtain a scanner:
     List<StoreFileScanner> scanners = StoreFileScanner
       .getScannersForStoreFiles(filesToCompact, false, false);
@@ -1106,7 +1117,8 @@ public class Store implements HeapSize {
             // output to writer:
             for (KeyValue kv : kvs) {
               writer.append(kv);
-
+              // update progress per key
+              ++progress.currentCompactedKVs;
               // check periodically to see if a system stop is requested
               if (Store.closeCheckInterval > 0) {
                 bytesWritten += kv.getLength();
