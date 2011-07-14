@@ -91,7 +91,7 @@ implements WritableComparable<HServerLoad> {
     private int writeRequestsCount;
     /** the total compacting key values in currently running compaction */
     private int totalCompactingKVs;
-    /** the competed count of key values in currently running compaction */
+    /** the completed count of key values in currently running compaction */
     private int currentCompactedKVs;
 
     /**
