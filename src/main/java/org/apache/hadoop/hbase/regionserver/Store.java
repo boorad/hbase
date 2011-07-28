@@ -765,7 +765,7 @@ public class Store implements HeapSize {
     return minTs;
   }
 
-  /** getter for ComppactionProgress object
+  /** getter for CompactionProgress object
    * @return CompactionProgress object
    */
   public CompactionProgress getCompactionProgress() {
