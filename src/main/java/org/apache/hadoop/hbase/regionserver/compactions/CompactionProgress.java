@@ -32,14 +32,14 @@ package org.apache.hadoop.hbase.regionserver.compactions;
 public class CompactionProgress {
 
   /** the total compacting key values in currently running compaction */
-  public int totalCompactingKVs;
+  public long totalCompactingKVs;
   /** the completed count of key values in currently running compaction */
-  public int currentCompactedKVs = 0;
+  public long currentCompactedKVs = 0;
 
   /** Constructor
    * @param totalCompactingKVs the total Key/Value pairs to be compacted
    */
-  public CompactionProgress(int totalCompactingKVs) {
+  public CompactionProgress(long totalCompactingKVs) {
     this.totalCompactingKVs = totalCompactingKVs;
   }
 

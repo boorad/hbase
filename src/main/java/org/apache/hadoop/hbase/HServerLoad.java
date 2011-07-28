@@ -90,9 +90,9 @@ implements WritableComparable<HServerLoad> {
     /** the current total write requests made to region */
     private int writeRequestsCount;
     /** the total compacting key values in currently running compaction */
-    private int totalCompactingKVs;
+    private long totalCompactingKVs;
     /** the completed count of key values in currently running compaction */
-    private int currentCompactedKVs;
+    private long currentCompactedKVs;
 
     /**
      * Constructor, for Writable
@@ -119,7 +119,7 @@ implements WritableComparable<HServerLoad> {
         final int storefileSizeMB,
         final int memstoreSizeMB, final int storefileIndexSizeMB,
         final int readRequestsCount, final int writeRequestsCount,
-        final int totalCompactingKVs, final int currentCompactedKVs) {
+        final long totalCompactingKVs, final long currentCompactedKVs) {
       this.name = name;
       this.stores = stores;
       this.storefiles = storefiles;
@@ -208,14 +208,14 @@ implements WritableComparable<HServerLoad> {
     /**
      * @return the total number of kvs in current compaction
      */
-    public int getTotalCompactingKVs() {
+    public long getTotalCompactingKVs() {
       return totalCompactingKVs;
     }
 
     /**
      * @return the number of already compacted kvs in current compaction
      */
-    public int getCurrentCompactedKVs() {
+    public long getCurrentCompactedKVs() {
       return currentCompactedKVs;
     }
 
@@ -319,8 +319,8 @@ implements WritableComparable<HServerLoad> {
       out.writeInt(storefileIndexSizeMB);
       out.writeInt(readRequestsCount);
       out.writeInt(writeRequestsCount);
-      out.writeInt(totalCompactingKVs);
-      out.writeInt(currentCompactedKVs);
+      out.writeLong(totalCompactingKVs);
+      out.writeLong(currentCompactedKVs);
     }
 
     /**

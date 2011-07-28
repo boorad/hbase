@@ -921,8 +921,8 @@ public class HRegionServer implements HRegionInterface, HBaseRPCErrorHandler,
     int storefileSizeMB = 0;
     int memstoreSizeMB = (int) (r.memstoreSize.get() / 1024 / 1024);
     int storefileIndexSizeMB = 0;
-    int totalCompactingKVs = 0;
-    int currentCompactedKVs = 0;
+    long totalCompactingKVs = 0;
+    long currentCompactedKVs = 0;
     synchronized (r.stores) {
       stores += r.stores.size();
       for (Store store : r.stores.values()) {
